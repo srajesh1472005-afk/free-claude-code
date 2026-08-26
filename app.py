@@ -20,29 +20,53 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS styling
+# Custom CSS styling for Enterprise Company-Grade UI
 st.markdown(
     """
     <style>
+    .main {
+        background-color: #F8FAFC;
+    }
     .main-header {
         font-size: 2.2rem;
-        color: #1E3A8A;
-        font-weight: 700;
-        margin-bottom: 0.2rem;
+        color: #0F172A;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        margin-bottom: 0.1rem;
     }
     .sub-header {
-        font-size: 1.1rem;
-        color: #4B5563;
+        font-size: 1.05rem;
+        color: #64748B;
+        font-weight: 400;
         margin-bottom: 1.5rem;
     }
+    .enterprise-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        margin-bottom: 1rem;
+    }
     .metric-card {
-        background-color: #F3F4F6;
-        border-radius: 0.5rem;
+        background: linear-gradient(135deg, #F0Fdf4 0%, #DCFCE7 100%);
+        border: 1px solid #BBF7D0;
+        border-radius: 0.75rem;
         padding: 1rem;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        text-align: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .stAlert {
         border-radius: 0.5rem;
+    }
+    .stButton>button {
+        border-radius: 0.5rem;
+        font-weight: 600;
+        transition: all 0.2s ease-in-out;
+    }
+    .stButton>button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     </style>
     """,
@@ -345,19 +369,20 @@ class ProductionOptimizer:
             if target_machine not in machine_ready_time:
                 target_machine = min(machine_ready_time, key=lambda m: machine_ready_time[m])
 
-            base_time = order.processing_time * (order.quantity / max(1, order.quantity))
-            pred_time = base_time
+            base_time_per_part = order.processing_time
+            pred_time_per_part = base_time_per_part
             if self.predictor and self.predictor.is_trained:
-                pred_time = self.predictor.predict_processing_time(
+                pred_time_per_part = self.predictor.predict_processing_time(
                     part=order.part,
                     material=order.material,
                     operation=order.operation,
-                    fallback_time=base_time,
+                    fallback_time=base_time_per_part,
                 )
 
             machine_info = next((m for m in self.machines if m.machine_id == target_machine), None)
             speed_factor = machine_info.speed_factor if machine_info else 1.0
-            adjusted_processing_time = pred_time / max(0.1, speed_factor)
+            total_batch_processing_time = (pred_time_per_part * order.quantity) / max(0.1, speed_factor)
+            adjusted_processing_time = total_batch_processing_time
 
             last_part = machine_last_part.get(target_machine, "")
             changeover = (
@@ -614,10 +639,11 @@ def initialize_session_state() -> None:
         st.session_state.machines = get_sample_machines()
     if "historical" not in st.session_state:
         st.session_state.historical = get_sample_historical_data()
-    if "predictor" not in st.session_state:
-        st.session_state.predictor = ProcessingTimePredictor()
-    if "trained_ml" not in st.session_state:
-        st.session_state.trained_ml = False
+    if "predictor" not in st.session_state or not st.session_state.get("trained_ml", False):
+        predictor = ProcessingTimePredictor()
+        predictor.train(st.session_state.historical)
+        st.session_state.predictor = predictor
+        st.session_state.trained_ml = True
 
 
 initialize_session_state()
@@ -766,28 +792,45 @@ elif page == "📂 Data Inputs & Uploads":
     available_operations = ["Turning & Milling", "Boring", "Lathe Cut", "Surface Grinding", "Milling", "Turning"]
 
     with tab1:
-        st.subheader("Manage Production Orders (with Dropdown Selectors)")
+        st.subheader("Manage Production Orders (Smart Operation-Machine Matching)")
 
-        with st.form("add_order_form"):
-            st.markdown("### Add / Update Production Order")
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1:
-                f_job_id = st.text_input("Job ID", value=f"JOB-{100 + len(st.session_state.orders) + 1}")
-                f_part = st.selectbox("Part", options=available_parts)
-                f_machine = st.selectbox("Assigned Machine", options=available_machines)
-                f_quantity = st.number_input("Quantity", min_value=1, value=40, step=1)
-            with col_f2:
-                f_material = st.selectbox("Material", options=available_materials)
-                f_operation = st.selectbox("Operation", options=available_operations)
-                f_proc_time = st.number_input("Base Processing Time (hrs)", min_value=0.1, value=2.0, step=0.1)
-                f_setup_time = st.number_input("Setup Time (hrs)", min_value=0.0, value=0.5, step=0.1)
-            with col_f3:
-                f_priority = st.slider("Priority (1=Low, 5=High)", min_value=1, max_value=5, value=3)
-                f_due_date = st.number_input("Due Date (hrs)", min_value=1.0, value=24.0, step=1.0)
-                st.markdown("")
-                submitted_order = st.form_submit_button("➕ Add Order to Schedule", type="primary")
+        OPERATION_MACHINE_MAP = {
+            "Turning & Milling": ["CNC-01", "CNC-03"],
+            "Boring": ["CNC-02"],
+            "Lathe Cut": ["CNC-01"],
+            "Surface Grinding": ["CNC-03"],
+            "Milling": ["CNC-02", "CNC-03"],
+            "Turning": ["CNC-01"],
+        }
 
-            if submitted_order:
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            f_job_id = st.text_input("Job ID", value=f"JOB-{100 + len(st.session_state.orders) + 1}")
+            f_part = st.selectbox("Part", options=available_parts, key="smart_part")
+            f_operation = st.selectbox("Operation", options=available_operations, key="smart_op")
+
+            compatible_machines = OPERATION_MACHINE_MAP.get(f_operation, available_machines)
+            compatible_machines = [m for m in compatible_machines if m in available_machines]
+            if not compatible_machines:
+                compatible_machines = available_machines
+
+            f_machine = st.selectbox("Compatible Machine (Filtered)", options=compatible_machines, key="smart_mach")
+
+        with col_f2:
+            f_material = st.selectbox("Material", options=available_materials, key="smart_mat")
+            f_quantity = st.number_input("Total Quantity (parts)", min_value=1, value=40, step=1, key="smart_qty")
+            f_proc_time_mins = st.number_input("Machining Time for 1 Part (minutes)", min_value=0.1, value=30.0, step=1.0, key="smart_proc_mins", help="Enter machining time for a single part in minutes")
+
+            f_proc_time_hours = f_proc_time_mins / 60.0
+            total_calc_hours = f_proc_time_hours * f_quantity
+            st.markdown(f"💡 **Total Batch Time**: `{f_proc_time_mins} mins × {f_quantity} parts = **{total_calc_hours:.2f} hrs**`")
+
+        with col_f3:
+            f_setup_time = st.number_input("Setup Time (hrs)", min_value=0.0, value=0.5, step=0.1, key="smart_setup")
+            f_priority = st.slider("Priority (1=Low, 5=High)", min_value=1, max_value=5, value=3, key="smart_prio")
+            f_due_date = st.number_input("Due Date (hrs)", min_value=1.0, value=24.0, step=1.0, key="smart_due")
+            st.markdown("")
+            if st.button("➕ Add Order to Schedule", type="primary", key="smart_btn_add"):
                 existing_idx = next((i for i, o in enumerate(st.session_state.orders) if o.job_id == f_job_id), None)
                 new_ord = ProductionOrder(
                     job_id=f_job_id,
@@ -796,7 +839,7 @@ elif page == "📂 Data Inputs & Uploads":
                     quantity=int(f_quantity),
                     material=f_material,
                     operation=f_operation,
-                    processing_time=float(f_proc_time),
+                    processing_time=float(f_proc_time_hours),
                     setup_time=float(f_setup_time),
                     priority=int(f_priority),
                     due_date=float(f_due_date),
@@ -960,7 +1003,20 @@ elif page == "🤖 ML Processing Time Predictor":
         if st.session_state.trained_ml and st.session_state.predictor.feature_importances:
             imp_dict = st.session_state.predictor.feature_importances
             imp_df = pd.DataFrame(list(imp_dict.items()), columns=["Feature", "Importance"]).sort_values("Importance", ascending=True)
-            fig_imp = px.bar(imp_df, x="Importance", y="Feature", orientation="h", title="Random Forest Feature Importances", color="Importance", color_continuous_scale="Viridis")
+            fig_imp = px.bar(
+                imp_df,
+                x="Importance",
+                y="Feature",
+                orientation="h",
+                title="Random Forest Feature Importances",
+                color="Importance",
+                color_continuous_scale="Viridis",
+                template="plotly_white",
+            )
+            fig_imp.update_layout(
+                font=dict(family="Inter, sans-serif", size=12),
+                title_font=dict(size=16, color="#0F172A"),
+            )
             st.plotly_chart(fig_imp)
         else:
             st.info("Train the model to visualize feature importances.")
@@ -1061,22 +1117,25 @@ elif page == "📈 Interactive Visualizations":
             color="Part",
             title="Machine-wise Job Timelines (Gantt)",
             labels={"Start": "Start Time (hours)", "Finish": "Finish Time (hours)"},
+            template="plotly_white",
         )
         fig_gantt.update_yaxes(categoryorder="total ascending")
+        fig_gantt.update_layout(font=dict(family="Inter, sans-serif", size=12), title_font=dict(size=16, color="#0F172A"))
         st.plotly_chart(fig_gantt)
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Machine Workload Distribution")
             workload_df = pd.DataFrame(list(result.machine_workload.items()), columns=["Machine ID", "Workload (hrs)"])
-            fig_workload = px.bar(workload_df, x="Machine ID", y="Workload (hrs)", color="Workload (hrs)", color_continuous_scale="Blues", text_auto=True)
+            fig_workload = px.bar(workload_df, x="Machine ID", y="Workload (hrs)", color="Workload (hrs)", color_continuous_scale="Blues", text_auto=True, template="plotly_white")
+            fig_workload.update_layout(font=dict(family="Inter, sans-serif", size=12))
             st.plotly_chart(fig_workload)
 
         with col2:
             st.subheader("Machine Utilization (%)")
             util_df = pd.DataFrame(list(result.machine_utilization.items()), columns=["Machine ID", "Utilization (%)"])
-            fig_util = px.bar(util_df, x="Machine ID", y="Utilization (%)", color="Utilization (%)", color_continuous_scale="Greens", text_auto=True)
-            fig_util.update_layout(yaxis_range=[0, 100])
+            fig_util = px.bar(util_df, x="Machine ID", y="Utilization (%)", color="Utilization (%)", color_continuous_scale="Greens", text_auto=True, template="plotly_white")
+            fig_util.update_layout(yaxis_range=[0, 100], font=dict(family="Inter, sans-serif", size=12))
             st.plotly_chart(fig_util)
 
 # 6. Real-Time Failure & Rescheduling
