@@ -1,5 +1,5 @@
 """AI-Based Smart Production Scheduling and Real-Time Rescheduling System.
-Self-contained Streamlit application for Streamlit Community Cloud and local execution.
+Self-contained Streamlit application with explicit form dropdown selectors for production orders and machines.
 """
 
 from dataclasses import dataclass
@@ -752,7 +752,7 @@ elif page == "📂 Data Inputs & Uploads":
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="sub-header">Manage production orders, machine status, and historical data via CSV upload or manual entry.</div>',
+        '<div class="sub-header">Manage production orders and machine status using interactive dropdown selectors.</div>',
         unsafe_allow_html=True,
     )
 
@@ -760,202 +760,174 @@ elif page == "📂 Data Inputs & Uploads":
         ["Production Orders", "Machine Information", "Historical Manufacturing Data"]
     )
 
+    available_machines = [m.machine_id for m in st.session_state.machines]
+    available_parts = ["Gear Shaft A", "Housing Cover B", "Drive Axle C", "Flange Plate D", "Bracket E", "Spindle Shaft F"]
+    available_materials = ["Steel 4140", "Aluminum 6061", "Steel 4340", "Stainless Steel", "Aluminum 7075"]
+    available_operations = ["Turning & Milling", "Boring", "Lathe Cut", "Surface Grinding", "Milling", "Turning"]
+
     with tab1:
-        st.subheader("Production Orders")
-        col_up, col_btn = st.columns([3, 1])
-        with col_up:
-            order_file = st.file_uploader(
-                "Upload Production Orders CSV", type=["csv"], key="order_csv"
-            )
-        with col_btn:
-            if st.button("Load Sample Orders"):
-                st.session_state.orders = get_sample_production_orders()
-                st.success("Sample orders loaded!")
+        st.subheader("Manage Production Orders (with Dropdown Selectors)")
 
-        if order_file is not None:
-            try:
-                df_in = pd.read_csv(order_file)
-                new_orders = []
-                for _, row in df_in.iterrows():
-                    new_orders.append(
-                        ProductionOrder(
-                            job_id=str(row.get("Job ID", f"JOB-{_}")),
-                            part=str(row.get("Part", "Part A")),
-                            machine_id=str(row.get("Machine", "CNC-01")),
-                            quantity=int(row.get("Quantity", 10)),
-                            material=str(row.get("Material", "Steel")),
-                            operation=str(row.get("Operation", "Milling")),
-                            processing_time=float(row.get("Processing Time", 2.0)),
-                            setup_time=float(row.get("Setup Time", 0.5)),
-                            priority=int(row.get("Priority", 3)),
-                            due_date=float(row.get("Due Date", 24.0)),
-                        )
-                    )
-                st.session_state.orders = new_orders
-                st.success(f"Successfully loaded {len(new_orders)} production orders from CSV.")
-            except Exception as e:
-                st.error(f"Error parsing CSV: {e}")
+        with st.form("add_order_form"):
+            st.markdown("### Add / Update Production Order")
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                f_job_id = st.text_input("Job ID", value=f"JOB-{100 + len(st.session_state.orders) + 1}")
+                f_part = st.selectbox("Part", options=available_parts)
+                f_machine = st.selectbox("Assigned Machine", options=available_machines)
+                f_quantity = st.number_input("Quantity", min_value=1, value=40, step=1)
+            with col_f2:
+                f_material = st.selectbox("Material", options=available_materials)
+                f_operation = st.selectbox("Operation", options=available_operations)
+                f_proc_time = st.number_input("Base Processing Time (hrs)", min_value=0.1, value=2.0, step=0.1)
+                f_setup_time = st.number_input("Setup Time (hrs)", min_value=0.0, value=0.5, step=0.1)
+            with col_f3:
+                f_priority = st.slider("Priority (1=Low, 5=High)", min_value=1, max_value=5, value=3)
+                f_due_date = st.number_input("Due Date (hrs)", min_value=1.0, value=24.0, step=1.0)
+                st.markdown("")
+                submitted_order = st.form_submit_button("➕ Add Order to Schedule", type="primary")
 
-        orders_df = pd.DataFrame(
-            [
-                {
-                    "Job ID": o.job_id,
-                    "Part": o.part,
-                    "Machine": o.machine_id,
-                    "Quantity": o.quantity,
-                    "Material": o.material,
-                    "Operation": o.operation,
-                    "Processing Time": o.processing_time,
-                    "Setup Time": o.setup_time,
-                    "Priority": o.priority,
-                    "Due Date": o.due_date,
-                }
-                for o in st.session_state.orders
-            ]
-        )
-        edited_orders_df = st.data_editor(orders_df, num_rows="dynamic")
-        if st.button("Save Orders Edits"):
-            updated_orders = []
-            for _, r in edited_orders_df.iterrows():
-                updated_orders.append(
-                    ProductionOrder(
-                        job_id=str(r["Job ID"]),
-                        part=str(r["Part"]),
-                        machine_id=str(r["Machine"]),
-                        quantity=int(r["Quantity"]),
-                        material=str(r["Material"]),
-                        operation=str(r["Operation"]),
-                        processing_time=float(r["Processing Time"]),
-                        setup_time=float(r["Setup Time"]),
-                        priority=int(r["Priority"]),
-                        due_date=float(r["Due Date"]),
-                    )
+            if submitted_order:
+                existing_idx = next((i for i, o in enumerate(st.session_state.orders) if o.job_id == f_job_id), None)
+                new_ord = ProductionOrder(
+                    job_id=f_job_id,
+                    part=f_part,
+                    machine_id=f_machine,
+                    quantity=int(f_quantity),
+                    material=f_material,
+                    operation=f_operation,
+                    processing_time=float(f_proc_time),
+                    setup_time=float(f_setup_time),
+                    priority=int(f_priority),
+                    due_date=float(f_due_date),
                 )
-            st.session_state.orders = updated_orders
-            st.success("Production orders updated successfully!")
+                if existing_idx is not None:
+                    st.session_state.orders[existing_idx] = new_ord
+                    st.success(f"Updated order {f_job_id} successfully!")
+                else:
+                    st.session_state.orders.append(new_ord)
+                    st.success(f"Added new order {f_job_id} successfully!")
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader("Current Production Orders List")
+
+        for idx, order in enumerate(st.session_state.orders):
+            cols = st.columns([2, 2, 2, 1, 1, 1])
+            cols[0].write(f"**{order.job_id}**: {order.part}")
+            cols[1].write(f"Machine: `{order.machine_id}`")
+            cols[2].write(f"Qty: {order.quantity} | Due: {order.due_date}h")
+            cols[3].write(f"Priority: {order.priority}")
+            cols[4].write(f"Proc: {order.processing_time}h")
+            if cols[5].button("🗑️ Delete", key=f"del_ord_{idx}"):
+                st.session_state.orders.pop(idx)
+                st.rerun()
+
+        if st.button("Reset Orders to Default"):
+            st.session_state.orders = get_sample_production_orders()
+            st.success("Orders reset to sample data!")
+            st.rerun()
 
     with tab2:
-        st.subheader("Machine Information & Status")
-        col_up_m, col_btn_m = st.columns([3, 1])
-        with col_up_m:
-            machine_file = st.file_uploader("Upload Machine Info CSV", type=["csv"], key="machine_csv")
-        with col_btn_m:
-            if st.button("Load Sample Machines"):
-                st.session_state.machines = get_sample_machines()
-                st.success("Sample machines loaded!")
+        st.subheader("Manage Machines & Status (with Dropdowns)")
 
-        if machine_file is not None:
-            try:
-                df_m = pd.read_csv(machine_file)
-                new_machines = []
-                for _, row in df_m.iterrows():
-                    new_machines.append(
-                        MachineInfo(
-                            machine_id=str(row.get("Machine ID", "CNC-01")),
-                            machine_type=str(row.get("Machine Type", "CNC")),
-                            status=str(row.get("Status", "AVAILABLE")),
-                            current_job=str(row.get("Current Job", "Idle")),
-                            speed_factor=float(row.get("Speed Factor", 1.0)),
-                        )
-                    )
-                st.session_state.machines = new_machines
-                st.success(f"Successfully loaded {len(new_machines)} machines.")
-            except Exception as e:
-                st.error(f"Error parsing machine CSV: {e}")
+        with st.form("add_machine_form"):
+            st.markdown("### Add / Update Machine")
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                m_id = st.text_input("Machine ID", value=f"CNC-0{len(st.session_state.machines) + 1}")
+                m_type = st.text_input("Machine Type", value="5-Axis CNC")
+                m_status = st.selectbox("Status", options=["AVAILABLE", "DOWN"])
+            with col_m2:
+                m_job = st.text_input("Current Job", value="Idle")
+                m_speed = st.number_input("Speed Factor", min_value=0.5, max_value=2.0, value=1.0, step=0.1)
+                st.markdown("")
+                submitted_machine = st.form_submit_button("➕ Add / Update Machine", type="primary")
 
-        machines_df = pd.DataFrame(
-            [
-                {
-                    "Machine ID": m.machine_id,
-                    "Machine Type": m.machine_type,
-                    "Status": m.status,
-                    "Current Job": m.current_job,
-                    "Speed Factor": m.speed_factor,
-                }
-                for m in st.session_state.machines
-            ]
-        )
-        edited_machines_df = st.data_editor(machines_df, num_rows="dynamic")
-        if st.button("Save Machine Edits"):
-            updated_machines = []
-            for _, r in edited_machines_df.iterrows():
-                updated_machines.append(
-                    MachineInfo(
-                        machine_id=str(r["Machine ID"]),
-                        machine_type=str(r["Machine Type"]),
-                        status=str(r["Status"]),
-                        current_job=str(r["Current Job"]),
-                        speed_factor=float(r["Speed Factor"]),
-                    )
+            if submitted_machine:
+                existing_m_idx = next((i for i, m in enumerate(st.session_state.machines) if m.machine_id == m_id), None)
+                new_mach = MachineInfo(
+                    machine_id=m_id,
+                    machine_type=m_type,
+                    status=m_status,
+                    current_job=m_job,
+                    speed_factor=float(m_speed),
                 )
-            st.session_state.machines = updated_machines
-            st.success("Machine information updated successfully!")
+                if existing_m_idx is not None:
+                    st.session_state.machines[existing_m_idx] = new_mach
+                    st.success(f"Updated machine {m_id} successfully!")
+                else:
+                    st.session_state.machines.append(new_mach)
+                    st.success(f"Added machine {m_id} successfully!")
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader("Current Machines List")
+        for idx, mach in enumerate(st.session_state.machines):
+            cols = st.columns([2, 2, 2, 1])
+            cols[0].write(f"**{mach.machine_id}** ({mach.machine_type})")
+            status_color = "🔴" if mach.status == "DOWN" else "🟢"
+            cols[1].write(f"Status: {status_color} **{mach.status}**")
+            cols[2].write(f"Speed Factor: {mach.speed_factor}x")
+            if cols[3].button("🗑️ Delete", key=f"del_mach_{idx}"):
+                st.session_state.machines.pop(idx)
+                st.rerun()
+
+        if st.button("Reset Machines to Default"):
+            st.session_state.machines = get_sample_machines()
+            st.success("Machines reset to sample data!")
+            st.rerun()
 
     with tab3:
-        st.subheader("Historical Manufacturing Data (for ML Training)")
-        col_up_h, col_btn_h = st.columns([3, 1])
-        with col_up_h:
-            hist_file = st.file_uploader("Upload Historical Data CSV", type=["csv"], key="hist_csv")
-        with col_btn_h:
-            if st.button("Load Sample Historical Data"):
-                st.session_state.historical = get_sample_historical_data()
-                st.success("Sample historical data loaded!")
+        st.subheader("Historical Manufacturing Data (ML Training)")
 
-        if hist_file is not None:
-            try:
-                df_h = pd.read_csv(hist_file)
-                new_hist = []
-                for _, row in df_h.iterrows():
-                    new_hist.append(
-                        HistoricalDataRecord(
-                            part=str(row.get("Part", "Part A")),
-                            material=str(row.get("Material", "Steel")),
-                            operation=str(row.get("Operation", "Milling")),
-                            cutting_speed=float(row.get("Cutting Speed", 250.0)),
-                            feed_rate=float(row.get("Feed Rate", 0.25)),
-                            depth_of_cut=float(row.get("Depth of Cut", 2.0)),
-                            tool_condition=float(row.get("Tool Condition", 0.9)),
-                            actual_processing_time=float(row.get("Actual Processing Time", 2.0)),
-                        )
-                    )
-                st.session_state.historical = new_hist
-                st.success(f"Successfully loaded {len(new_hist)} historical records.")
-            except Exception as e:
-                st.error(f"Error parsing historical CSV: {e}")
+        with st.form("add_hist_form"):
+            st.markdown("### Add Historical Record")
+            col_h1, col_h2 = st.columns(2)
+            with col_h1:
+                h_part = st.selectbox("Part Name", options=available_parts, key="h_part")
+                h_mat = st.selectbox("Material", options=available_materials, key="h_mat")
+                h_op = st.selectbox("Operation", options=available_operations, key="h_op")
+                h_speed = st.number_input("Cutting Speed", value=250.0)
+            with col_h2:
+                h_feed = st.number_input("Feed Rate", value=0.25)
+                h_depth = st.number_input("Depth of Cut", value=2.0)
+                h_tool = st.number_input("Tool Condition", min_value=0.1, max_value=1.0, value=0.9)
+                h_actual = st.number_input("Actual Processing Time (hrs)", value=2.2)
+                st.markdown("")
+                submitted_hist = st.form_submit_button("➕ Add Historical Record", type="primary")
 
-        hist_df = pd.DataFrame(
-            [
-                {
-                    "Part": h.part,
-                    "Material": h.material,
-                    "Operation": h.operation,
-                    "Cutting Speed": h.cutting_speed,
-                    "Feed Rate": h.feed_rate,
-                    "Depth of Cut": h.depth_of_cut,
-                    "Tool Condition": h.tool_condition,
-                    "Actual Processing Time": h.actual_processing_time,
-                }
-                for h in st.session_state.historical
-            ]
-        )
-        edited_hist_df = st.data_editor(hist_df, num_rows="dynamic")
-        if st.button("Save Historical Data Edits"):
-            updated_hist = []
-            for _, r in edited_hist_df.iterrows():
-                updated_hist.append(
+            if submitted_hist:
+                st.session_state.historical.append(
                     HistoricalDataRecord(
-                        part=str(r["Part"]),
-                        material=str(r["Material"]),
-                        operation=str(r["Operation"]),
-                        cutting_speed=float(r["Cutting Speed"]),
-                        feed_rate=float(r["Feed Rate"]),
-                        depth_of_cut=float(r["Depth of Cut"]),
-                        tool_condition=float(r["Tool Condition"]),
-                        actual_processing_time=float(r["Actual Processing Time"]),
+                        part=h_part,
+                        material=h_mat,
+                        operation=h_op,
+                        cutting_speed=float(h_speed),
+                        feed_rate=float(h_feed),
+                        depth_of_cut=float(h_depth),
+                        tool_condition=float(h_tool),
+                        actual_processing_time=float(h_actual),
                     )
                 )
-            st.session_state.historical = updated_hist
-            st.success("Historical data updated successfully!")
+                st.success("Historical record added successfully!")
+                st.rerun()
+
+        st.markdown("---")
+        st.subheader(f"Historical Records ({len(st.session_state.historical)} total)")
+        for idx, rec in enumerate(st.session_state.historical[-10:]):
+            cols = st.columns([3, 2, 2, 1])
+            cols[0].write(f"**{rec.part}** ({rec.material})")
+            cols[1].write(f"Op: {rec.operation}")
+            cols[2].write(f"Actual Time: {rec.actual_processing_time}h")
+            if cols[3].button("🗑️", key=f"del_hist_{idx}"):
+                st.session_state.historical.pop(idx)
+                st.rerun()
+
+        if st.button("Reset Historical Data to Default"):
+            st.session_state.historical = get_sample_historical_data()
+            st.success("Historical data reset to sample data!")
+            st.rerun()
 
 # 3. ML Processing Time Predictor
 elif page == "🤖 ML Processing Time Predictor":
