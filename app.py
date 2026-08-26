@@ -700,7 +700,7 @@ if page == "📊 Executive Dashboard":
         fig_util.update_layout(
             yaxis_range=[0, 100], margin={"l": 20, "r": 20, "t": 30, "b": 20}
         )
-        st.plotly_chart(fig_util, use_container_width=True)
+        st.plotly_chart(fig_util)
 
     with col_b:
         st.subheader("💡 AI Production Recommendations")
@@ -743,7 +743,7 @@ if page == "📊 Executive Dashboard":
             for j in result.scheduled_jobs
         ]
     )
-    st.dataframe(summary_df, width=None)
+    st.dataframe(summary_df)
 
 # 2. Data Inputs & Uploads
 elif page == "📂 Data Inputs & Uploads":
@@ -813,7 +813,7 @@ elif page == "📂 Data Inputs & Uploads":
                 for o in st.session_state.orders
             ]
         )
-        edited_orders_df = st.data_editor(orders_df, num_rows="dynamic", width=None)
+        edited_orders_df = st.data_editor(orders_df, num_rows="dynamic")
         if st.button("Save Orders Edits"):
             updated_orders = []
             for _, r in edited_orders_df.iterrows():
@@ -875,7 +875,7 @@ elif page == "📂 Data Inputs & Uploads":
                 for m in st.session_state.machines
             ]
         )
-        edited_machines_df = st.data_editor(machines_df, num_rows="dynamic", width=None)
+        edited_machines_df = st.data_editor(machines_df, num_rows="dynamic")
         if st.button("Save Machine Edits"):
             updated_machines = []
             for _, r in edited_machines_df.iterrows():
@@ -938,7 +938,7 @@ elif page == "📂 Data Inputs & Uploads":
                 for h in st.session_state.historical
             ]
         )
-        edited_hist_df = st.data_editor(hist_df, num_rows="dynamic", width=None)
+        edited_hist_df = st.data_editor(hist_df, num_rows="dynamic")
         if st.button("Save Historical Data Edits"):
             updated_hist = []
             for _, r in edited_hist_df.iterrows():
@@ -989,7 +989,7 @@ elif page == "🤖 ML Processing Time Predictor":
             imp_dict = st.session_state.predictor.feature_importances
             imp_df = pd.DataFrame(list(imp_dict.items()), columns=["Feature", "Importance"]).sort_values("Importance", ascending=True)
             fig_imp = px.bar(imp_df, x="Importance", y="Feature", orientation="h", title="Random Forest Feature Importances", color="Importance", color_continuous_scale="Viridis")
-            st.plotly_chart(fig_imp, width=None)
+            st.plotly_chart(fig_imp)
         else:
             st.info("Train the model to visualize feature importances.")
 
@@ -1009,7 +1009,7 @@ elif page == "⚡ Optimization & Scheduling Engine":
         ],
     )
 
-    if st.button("Run Optimizer", type="primary", width=None):
+    if st.button("Run Optimizer", type="primary"):
         with st.spinner("Running scheduling optimization..."):
             optimizer = ProductionOptimizer(
                 st.session_state.orders,
@@ -1052,7 +1052,7 @@ elif page == "⚡ Optimization & Scheduling Engine":
                 for j in res.scheduled_jobs
             ]
         )
-        st.dataframe(sched_df, width=None)
+        st.dataframe(sched_df)
 
 # 5. Interactive Visualizations
 elif page == "📈 Interactive Visualizations":
@@ -1091,21 +1091,21 @@ elif page == "📈 Interactive Visualizations":
             labels={"Start": "Start Time (hours)", "Finish": "Finish Time (hours)"},
         )
         fig_gantt.update_yaxes(categoryorder="total ascending")
-        st.plotly_chart(fig_gantt, width=None)
+        st.plotly_chart(fig_gantt)
 
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Machine Workload Distribution")
             workload_df = pd.DataFrame(list(result.machine_workload.items()), columns=["Machine ID", "Workload (hrs)"])
             fig_workload = px.bar(workload_df, x="Machine ID", y="Workload (hrs)", color="Workload (hrs)", color_continuous_scale="Blues", text_auto=True)
-            st.plotly_chart(fig_workload, width=None)
+            st.plotly_chart(fig_workload)
 
         with col2:
             st.subheader("Machine Utilization (%)")
             util_df = pd.DataFrame(list(result.machine_utilization.items()), columns=["Machine ID", "Utilization (%)"])
             fig_util = px.bar(util_df, x="Machine ID", y="Utilization (%)", color="Utilization (%)", color_continuous_scale="Greens", text_auto=True)
             fig_util.update_layout(yaxis_range=[0, 100])
-            st.plotly_chart(fig_util, width=None)
+            st.plotly_chart(fig_util)
 
 # 6. Real-Time Failure & Rescheduling
 elif page == "🚨 Real-Time Failure & Rescheduling":
@@ -1116,7 +1116,7 @@ elif page == "🚨 Real-Time Failure & Rescheduling":
     downed_selection = st.multiselect("Select Machine(s) to Simulate DOWN", machine_ids)
     reschedule_time = st.slider("Failure Time (hours from start)", 0.0, 24.0, 2.0, 0.5)
 
-    if st.button("Trigger Failure & Reschedule", type="primary", width=None):
+    if st.button("Trigger Failure & Reschedule", type="primary"):
         optimizer = ProductionOptimizer(
             st.session_state.orders,
             st.session_state.machines,
@@ -1148,12 +1148,12 @@ elif page == "🚨 Real-Time Failure & Rescheduling":
         with col_b:
             st.markdown("**Baseline Schedule**")
             base_df = pd.DataFrame([{"Job": j.job_id, "Machine": j.machine_id, "Finish": j.finish_time, "Late": j.is_late} for j in b.scheduled_jobs])
-            st.dataframe(base_df, width=None)
+            st.dataframe(base_df)
 
         with col_a_sched:
             st.markdown("**Rescheduled After Failure**")
             after_df = pd.DataFrame([{"Job": j.job_id, "Machine": j.machine_id, "Finish": j.finish_time, "Late": j.is_late} for j in a.scheduled_jobs])
-            st.dataframe(after_df, width=None)
+            st.dataframe(after_df)
 
 # 7. Reports & CSV Exports
 elif page == "📥 Reports & CSV Exports":
