@@ -1127,6 +1127,43 @@ elif page == "🚨 Real-Time Failure & Rescheduling":
             after_df = pd.DataFrame([{"Job": j.job_id, "Machine": j.machine_id, "Finish": j.finish_time, "Late": j.is_late} for j in a.scheduled_jobs])
             st.dataframe(after_df)
 
+        st.markdown("---")
+        st.subheader("⏱️ Job-by-Job Delay & Variance Analysis (Hours)")
+
+        base_dict = {j.job_id: j for j in b.scheduled_jobs}
+        after_dict = {j.job_id: j for j in a.scheduled_jobs}
+
+        delay_rows = []
+        for job_id, b_job in base_dict.items():
+            a_job = after_dict.get(job_id)
+            if a_job:
+                finish_diff = round(a_job.finish_time - b_job.finish_time, 2)
+                lateness_diff = round(a_job.lateness - b_job.lateness, 2)
+                status = "On Time"
+                if finish_diff > 0:
+                    status = f"Delayed by +{finish_diff}h"
+                elif finish_diff < 0:
+                    status = f"Early by {finish_diff}h"
+
+                if a_job.is_late and not b_job.is_late:
+                    status = f"⚠️ Newly Late (+{lateness_diff}h)"
+                elif a_job.is_late and b_job.is_late:
+                    status = f"🔴 Still Late (+{lateness_diff}h)"
+
+                delay_rows.append({
+                    "Job ID": job_id,
+                    "Part": b_job.part,
+                    "Baseline Machine": b_job.machine_id,
+                    "Rescheduled Machine": a_job.machine_id,
+                    "Baseline Finish (h)": b_job.finish_time,
+                    "Rescheduled Finish (h)": a_job.finish_time,
+                    "Delay / Slip (hrs)": finish_diff,
+                    "Status": status
+                })
+
+        delay_df = pd.DataFrame(delay_rows)
+        st.dataframe(delay_df)
+
 # 7. Reports & CSV Exports
 elif page == "📥 Reports & CSV Exports":
     st.markdown('<div class="main-header">Reports & Data Exports</div>', unsafe_allow_html=True)
